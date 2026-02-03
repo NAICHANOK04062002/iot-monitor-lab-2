@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Air & Energy Lab Logger Pro + Smart Sync</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Kanit', sans-serif; background-color: #f1f5f9; }
+        .input-cell { @apply w-full p-2 text-center border rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white transition-all; }
+        .tab-active { @apply border-b-4 border-blue-600 text-blue-600 font-semibold bg-white; }
+        .section-card { @apply bg-white rounded-xl shadow-md p-4 mb-8 border border-slate-200 overflow-hidden; }
+        .header-gradient { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); }
+        @media print { .no-print { display: none !important; } body { background-color: white; padding: 0; } .section-card { box-shadow: none; border: 1px solid #ddd; } }
+        .metric-btn { @apply px-4 py-1.5 text-[11px] rounded-full border transition-all; }
+        .metric-btn.active { @apply bg-blue-600 text-white border-blue-600 font-bold shadow-md; }
+    </style>
+</head>
+<body class="pb-24">
+
+    <div class="bg-slate-900 text-[10px] text-slate-400 p-2 font-mono flex justify-center gap-6 no-print">
+        <span>APP_ID: <b class="text-white">my-private-lab-001</b></span>
+        <span>PROJECT: <b class="text-white">iot-project-2-728f2</b></span>
+        <span id="cloud-status" class="text-slate-500">● Cloud Standby</span>
+        <span>SYNC: <b id="last-sync" class="text-emerald-400">-</b></span>
+    </div>
+
+    <header class="header-gradient text-white p-5 shadow-xl sticky top-0 z-50 no-print">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <h1 class="text-2xl font-bold flex items-center gap-3">
+                <i class="fa-solid fa-microscope text-blue-400"></i>
+                ระบบบันทึกผลการทดลองอัจฉริยะ (Smart Link)
+            </h1>
+            <div class="flex gap-2">
+                <button id="iot-toggle-btn" onclick="window.toggleIoT()" class="bg-white text-slate-700 hover:bg-emerald-50 px-4 py-2 rounded-lg text-sm transition-all active:scale-95 shadow-lg font-bold">
+                    <i class="fa-solid fa-plug mr-1"></i> เปิดรับค่า IoT
+                </button>
+                <button onclick="window.executeExport()" class="bg-blue-500 hover:bg-blue-600 px-4 py-2 rounded-lg text-sm transition-all active:scale-95 shadow-lg text-white">
+                    <i class="fa-solid fa-download mr-1"></i> ส่งออกรายงาน
+                </button>
+                <button onclick="window.showResetModal()" class="bg-slate-700 hover:bg-red-600 px-4 py-2 rounded-lg text-sm transition-all text-white">
+                    ล้างข้อมูล
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <nav class="bg-white border-b sticky top-[136px] md:top-[88px] z-40 shadow-sm no-print text-xs">
+        <div class="max-w-4xl mx-auto flex">
+            <button id="tab1-btn" onclick="window.switchExp(1)" class="flex-1 py-4 text-center tab-active transition-all">คุณภาพอากาศ</button>
+            <button id="tab2-btn" onclick="window.switchExp(2)" class="flex-1 py-4 text-center text-slate-500 hover:bg-slate-100 transition-all">พลังงานไฟฟ้า</button>
+            <button id="tab3-btn" onclick="window.switchExp(3)" class="flex-1 py-4 text-center text-slate-500 hover:bg-slate-100 transition-all">เปรียบเทียบค่าไฟ</button>
+        </div>
+    </nav>
+
+    <main class="max-w-5xl mx-auto p-4 mt-4">
+        <div id="capture-area">
+            
+            <section id="exp1-section" class="space-y-6">
+                <div class="section-card border-t-4 border-blue-600 bg-white p-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="font-bold text-slate-700 text-lg flex items-center gap-2">
+                            <i class="fa-solid fa-chart-line text-blue-600"></i> แนวโน้มคุณภาพอากาศ
+                        </h3>
+                        <div class="flex gap-1 no-print">
+                            <button id="btn-co2" onclick="window.changeQualityMetric('co2')" class="metric-btn active">CO2</button>
+                            <button id="btn-dust" onclick="window.changeQualityMetric('dust')" class="metric-btn">ฝุ่น</button>
+                        </div>
+                    </div>
+                    <div class="h-[400px]"><canvas id="qualityChart"></canvas></div>
+                </div>
+
+                <div class="no-print bg-white p-4 rounded-xl border mb-6 shadow-sm space-y-3">
+                    <div>
+                        <label class="block text-[10px] text-slate-400 font-bold mb-1 uppercase tracking-widest">สถานการณ์และการทดลอง (สั่งงานบอร์ด)</label>
+                        <div class="flex gap-2">
+                            <select id="scenario-remote" class="flex-[2] p-2 border rounded-lg text-sm bg-slate-50 font-bold outline-none">
+                                <option value="1">สถานการณ์ 1: ระบบเดิม</option>
+                                <option value="2" selected>สถานการณ์ 2: ระบบใหม่</option>
+                            </select>
+                            <select id="trial-remote" class="flex-1 p-2 border rounded-lg text-sm bg-slate-50 font-bold outline-none">
+                                <option value="1">Trial 1</option>
+                                <option value="2">Trial 2</option>
+                                <option value="3">Trial 3</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button onclick="window.sendRemoteConfig()" class="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-xl text-xs font-bold shadow-lg transition-all active:scale-95">
+                        <i class="fa-solid fa-sync-alt mr-1"></i> อัปเดตการตั้งค่าไปที่บอร์ด (Remote Sync)
+                    </button>
+                </div>
+
+                <div class="no-print bg-slate-100 p-3 rounded-xl mb-4">
+                    <label class="block text-[9px] text-slate-500 font-bold mb-1">เลือกสถานการณ์เพื่อดูข้อมูลย้อนหลัง</label>
+                    <select id="scenario1-select" onchange="window.switchScenario1(this.value)" class="w-full p-2 border rounded-lg text-sm bg-white font-bold outline-none">
+                        <option value="1">แสดงผล: สถานการณ์ 1</option>
+                        <option value="2">แสดงผล: สถานการณ์ 2</option>
+                    </select>
+                </div>
+
+                <div id="exp1-content" class="space-y-8"></div>
+            </section>
+
+            <section id="exp2-section" class="hidden space-y-6">...</section>
+            <section id="exp3-section" class="hidden space-y-6">...</section>
+        </div>
+    </main>
+
+    <div id="reset-modal" ...></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCyM5EA_WYq0aPl30Fui3HWdlSzC0VYVi4",
+            authDomain: "iot-project-2-728f2.firebaseapp.com",
+            projectId: "iot-project-2-728f2",
+            storageBucket: "iot-project-2-728f2.firebasestorage.app",
+            messagingSenderId: "439399151074",
+            appId: "1:439399151074:web:ccca965cc2aa3f5379b5bb"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = "my-private-lab-001";
+
+        window.state = {
+            user: null,
+            data: JSON.parse(localStorage.getItem('lab_final_v100')) || {
+                exp1: { scenario1: { 1: {}, 2: {}, 3: {} }, scenario2: { 1: {}, 2: {}, 3: {} } },
+                exp2: { scenario1: { 1: {}, 2: {}, 3: {} }, scenario2: { 1: {}, 2: {}, 3: {} }, scenario3: { 1: {}, 2: {}, 3: {} } },
+                unit_price: 4.5
+            },
+            currentExp: 1, currentS1: 1, currentS2: 1, metric: 'co2', iot: false, unsub: null, chart: null
+        };
+
+        const tPts1 = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 130, 140, 150];
+        const tPts2 = [0, 30, 60, 90, 120, 150, 180];
+        const mTrs = [{id:'co2',l:'CO2 (ppm)'},{id:'dust',l:'ฝุ่น (µg)'},{id:'tempIn',l:'ใน (°C)'},{id:'tempOut',l:'นอก (°C)'}];
+
+        onAuthStateChanged(auth, u => { window.state.user = u; if (!u) signInAnonymously(auth); });
+
+        // --- เพิ่มฟังก์ชันสั่งงานบอร์ดตรงนี้ ---
+        window.sendRemoteConfig = async () => {
+            const sc = document.getElementById('scenario-remote').value;
+            const tr = document.getElementById('trial-remote').value;
+            try {
+                const controlRef = doc(db, 'artifacts', appId, 'public', 'data', 'control', 'command');
+                await setDoc(controlRef, {
+                    scenario: parseInt(sc),
+                    trial: parseInt(tr),
+                    requestReset: true,
+                    updatedAt: new Date().toISOString()
+                }, { merge: true });
+                alert(`✅ ส่งคำสั่งสำเร็จ! \nบอร์ดจะเปลี่ยนเป็น S${sc} Trial ${tr} ใน 5 วินาที`);
+            } catch (e) { alert("❌ เกิดข้อผิดพลาด: " + e.message); }
+        };
+
+        // --- ระบบ IoT Smart Sync (คงเดิม) ---
+        window.toggleIoT = () => {
+            window.state.iot = !window.state.iot;
+            const btn = document.getElementById('iot-toggle-btn');
+            const cloud = document.getElementById('cloud-status');
+            if (window.state.iot) {
+                btn.className = "bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-bold animate-pulse shadow-lg";
+                btn.innerHTML = "<i class='fa-solid fa-satellite-dish mr-1'></i> รับค่า Cloud...";
+                cloud.className = "text-emerald-400 font-bold"; cloud.textContent = "● Cloud Connected";
+                
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'esp32_readings', 'latest');
+                window.state.unsub = onSnapshot(docRef, snap => {
+                    if (snap.exists()) {
+                        const inc = snap.data();
+                        if (inc.exp1) {
+                            Object.keys(inc.exp1).forEach(sk => {
+                                const s = sk.toLowerCase();
+                                if (window.state.data.exp1[s]) {
+                                    Object.keys(inc.exp1[sk]).forEach(tk => {
+                                        window.state.data.exp1[s][tk] = { ...window.state.data.exp1[s][tk], ...inc.exp1[sk][tk] };
+                                    });
+                                }
+                            });
+                        }
+                        document.getElementById('last-sync').textContent = new Date().toLocaleTimeString();
+                        saveAndRefreshUI(false);
+                    }
+                });
+            } else {
+                btn.className = "bg-white text-slate-700 px-4 py-2 rounded-lg text-sm font-bold shadow-lg border";
+                btn.innerHTML = "<i class='fa-solid fa-plug mr-1'></i> เปิดรับค่า IoT";
+                cloud.className = "text-slate-500"; cloud.textContent = "● Cloud Standby";
+                if(window.state.unsub) window.state.unsub();
+            }
+        };
+
+        // ฟังก์ชันอื่นๆ (renderUI, calcAvg1, etc.) ให้ใช้ของเดิมตามลำดับ
+        // ... (คัดลอกส่วนที่เหลือจากโค้ดเดิมของคุณมาใส่ตรงนี้ได้เลยครับ)
+    </script>
+</body>
+</html>
